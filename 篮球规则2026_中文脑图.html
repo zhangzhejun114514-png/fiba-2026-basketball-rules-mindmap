@@ -74,6 +74,8 @@
     font-size:11px;font-weight:700;background:rgba(255,255,255,.16);color:#fff;
   }
   .node.collapsed .cnt{background:rgba(255,255,255,.28)}
+  .node.lft{text-align:right}
+  .node.lft .tog{margin-right:0;margin-left:6px}
   .node.hit{box-shadow:0 0 0 2px #ffd166, 0 0 16px rgba(255,209,102,.5)}
   .node.dim{opacity:.25}
 
@@ -115,22 +117,26 @@ const RAW = {"t":"FIBA 2026 官方篮球规则","c":[{"t":"规则一 比赛","c"
 const PAL = ["#ff8f3f","#4b9bff","#38c98a","#c08bff","#ffd166","#ff6b8b","#38c4d1","#9fd356","#ff9ecb","#8aa4ff"];
 function colorOf(i){ return PAL[i % PAL.length]; }
 
-/* ---------- 预处理：编号、层级、计数 ---------- */
-function prep(node, depth, branch){
+/* ---------- 预处理：编号、层级、计数、左右分侧 ---------- */
+function prep(node, depth, branch, side){
   node._depth = depth;
   node._branch = branch;
+  node._side  = side;                       /* -1 左 · +1 右 · 0 根 */
   node._collapsed = false;
   node._id = (prep._n = (prep._n||0) + 1);
   let n = 0;
-  (node.c||[]).forEach((ch, i) => {
+  const kids = node.c || [];
+  const half = Math.floor(kids.length / 2); /* 顶层左右均分：前一半在左，后一半在右 */
+  kids.forEach((ch, i) => {
     const b = depth === 0 ? i : branch;
-    prep(ch, depth + 1, b);
+    const s = depth === 0 ? (i < half ? -1 : 1) : side;
+    prep(ch, depth + 1, b, s);
     n += 1 + ch._count;
   });
   node._count = n;
   return node;
 }
-prep(RAW, 0, 0);
+prep(RAW, 0, 0, 0);
 
 /* 默认展开到第 2 层（规则 → 条文） */
 (function setDefault(node){
@@ -170,26 +176,25 @@ function render(){
     else if (node._depth === 1) cls = 'd1';
     else if (node._depth === 2 || (node.c||[]).length) cls = 'd2';
     const kids = (node.c||[]).length;
-    el.className = 'node ' + cls + (kids ? ' k' : '');
+    const lft = node._side === -1;          /* 左侧节点：折叠标记与计数移到父节点一侧 */
+    el.className = 'node ' + cls + (kids ? ' k' : '') + (lft ? ' lft' : '');
     el.title = kids ? node.t + '（点击展开整支／再点收起）' : node.t;
-    let html = kids ? '<span class="tog">' + (node._collapsed ? '▶' : '▼') + '</span>' : '';
-    html += escapeHtml(node.t);
-    if (kids){
-      html += '<span class="cnt">' + (node._collapsed ? node._count + '›' : node._count) + '</span>';
-    }
-    el.innerHTML = html;
+    const tog = kids ? '<span class="tog">' + (node._collapsed ? '▶' : '▼') + '</span>' : '';
+    const cnt = kids ? '<span class="cnt">' + (node._collapsed ? node._count + '›' : node._count) + '</span>' : '';
+    el.innerHTML = lft ? escapeHtml(node.t) + cnt + tog : tog + escapeHtml(node.t) + cnt;
     if (node._collapsed) el.classList.add('collapsed');
     const c = colorOf(node._branch);
+    const bs = lft ? 'borderRight' : 'borderLeft';   /* 强调边朝向父节点 */
     if (node._depth === 1){
       el.style.background = hexA(c, .18);
       el.style.borderColor = hexA(c, .75);
       el.style.color = '#fff';
-      el.style.borderLeft = '4px solid ' + c;
+      el.style[bs] = '4px solid ' + c;
     } else if (node._depth === 2){
       el.style.borderColor = hexA(c, .45);
-      el.style.borderLeft = '3px solid ' + hexA(c, .85);
+      el.style[bs] = '3px solid ' + hexA(c, .85);
     } else {
-      el.style.borderLeft = '2px solid ' + hexA(c, .35);
+      el.style[bs] = '2px solid ' + hexA(c, .35);
     }
     el.addEventListener('click', ev => {
       ev.stopPropagation();
@@ -207,37 +212,57 @@ function render(){
     node._h = el.offsetHeight;
   });
 
-  /* 列宽 */
-  const colW = [];
-  list.forEach(n => { colW[n._depth] = Math.max(colW[n._depth]||0, n._w); });
-  const colX = [0];
-  for (let d = 1; d < colW.length; d++) colX[d] = colX[d-1] + (colW[d-1]||80) + GAPX;
+  /* 列宽：左右两侧分别统计 */
+  const cwL = [], cwR = [];
+  let maxDepth = 0;
+  list.forEach(n => {
+    maxDepth = Math.max(maxDepth, n._depth);
+    if (n._side === -1) cwL[n._depth] = Math.max(cwL[n._depth]||0, n._w);
+    if (n._side ===  1) cwR[n._depth] = Math.max(cwR[n._depth]||0, n._w);
+  });
+  /* 右半侧各层左边缘（根左边缘为 0）；左半侧各层右边缘（根左侧 GAPX 为 -GAPX） */
+  const offR = [0, RAW._w + GAPX];
+  for (let d = 2; d <= maxDepth; d++) offR[d] = offR[d-1] + (cwR[d-1]||0) + GAPX;
+  const edgeL = [0, -GAPX];
+  for (let d = 2; d <= maxDepth; d++) edgeL[d] = edgeL[d-1] - (cwL[d-1]||0) - GAPX;
 
-  /* 纵向 tidy 布局 */
-  let cursor = 0;
-  (function place(node){
+  /* 纵向 tidy：左右两组各自排布，再垂直居中对齐 */
+  const place = node => {
     const kids = node._collapsed ? [] : (node.c||[]);
     if (!kids.length){
-      node._y = cursor;
-      cursor += node._h + GAPY;
-    } else {
-      const first = kids[0], last = kids[kids.length-1];
-      let top = null;
-      kids.forEach(k => { place(k); if (top === null) top = k._y; });
-      node._y = (top + last._y + last._h) / 2 - node._h / 2;
+      node._y = place._c;
+      place._c += node._h + GAPY;
+      return;
     }
-  })(RAW);
+    let top = null;
+    kids.forEach(k => { place(k); if (top === null) top = k._y; });
+    const last = kids[kids.length-1];
+    node._y = (top + last._y + last._h) / 2 - node._h / 2;
+  };
+  const R = (RAW.c||[]).filter(k => k._side ===  1);
+  const L = (RAW.c||[]).filter(k => k._side === -1);
+  place._c = 0; R.forEach(place); const spanR = Math.max(0, place._c - GAPY);
+  place._c = 0; L.forEach(place); const spanL = Math.max(0, place._c - GAPY);
+  const dY = (spanR - spanL) / 2;                 /* 左组整体下移，使其与右组同心中轴 */
+  L.forEach(k => (function shift(n){ n._y += dY; (n.c||[]).forEach(shift); })(k));
+  RAW._y = spanR / 2 - RAW._h / 2;
 
-  /* 定位 + 连线 */
-  const frag = document.createDocumentFragment();
-  let maxX = 0, maxY = 0;
+  /* 赋 x，并整体平移到正坐标空间 */
+  let minX = 1e9, minY = 1e9, maxX = 0, maxY = 0;
   list.forEach(n => {
-    const x = colX[n._depth], y = n._y;
-    n._x = x; n._y2 = y;
-    n._el.style.transform = `translate(${x}px, ${y}px)`;
-    maxX = Math.max(maxX, x + n._w);
-    maxY = Math.max(maxY, y + n._h);
+    n._x = n._side ===  1 ? offR[n._depth]
+         : n._side === -1 ? edgeL[n._depth] - n._w : 0;
+    minX = Math.min(minX, n._x); minY = Math.min(minY, n._y);
   });
+  list.forEach(n => {
+    n._x -= minX; n._y -= minY;
+    n._el.style.transform = `translate(${n._x}px, ${n._y}px)`;
+    maxX = Math.max(maxX, n._x + n._w);
+    maxY = Math.max(maxY, n._y + n._h);
+  });
+
+  /* 连线：左侧镜像（父节点左边 → 子节点右边） */
+  const frag = document.createDocumentFragment();
   wires.innerHTML = '';
   wires.setAttribute('viewBox', `0 0 ${maxX+60} ${maxY+60}`);
   wires.setAttribute('width', maxX + 60);
@@ -245,8 +270,9 @@ function render(){
   list.forEach(n => {
     if (n._collapsed) return;
     (n.c||[]).forEach(k => {
-      const x1 = n._x + n._w, y1 = n._y + n._h/2;
-      const x2 = k._x,          y2 = k._y + k._h/2;
+      const left = k._side === -1;
+      const x1 = left ? n._x : n._x + n._w, y1 = n._y + n._h/2;
+      const x2 = left ? k._x + k._w : k._x, y2 = k._y + k._h/2;
       const mx = (x1 + x2) / 2;
       const p = document.createElementNS('http://www.w3.org/2000/svg','path');
       p.setAttribute('d', `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`);
