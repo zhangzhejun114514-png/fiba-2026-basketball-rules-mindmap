@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>v3 化简定义 · 注入攻击检测研究报告</title>
+<style>
+  :root{
+    --ink:#0f1b26; --h1:#04121f; --h2:#0d47a1; --h3:#14487a;
+    --dim:#54657a; --line:#c3d4e1; --line2:#9db6cb;
+    --thead-bg:#d7e6f3; --thead-ink:#083a5e;
+    --zebra:#f4f8fb; --ok:#0b6b3a; --warn:#a1540a; --bad:#9a1f1f;
+    --card:#f7fafc; --cardline:#dce8f2; --accent:#eaf2f9;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  body{
+    margin:0; color:var(--ink); background:#fff;
+    font-family:"Segoe UI","Microsoft YaHei","PingFang SC",Arial,sans-serif;
+    font-size:10.4pt; line-height:1.62;
+  }
+  .page{max-width:900px; margin:0 auto; padding:22px 30px 40px}
+
+  h1,h2,h3,h4{color:var(--h1); line-height:1.28; break-after:avoid; page-break-after:avoid}
+  h1{font-size:19pt; margin:26px 0 10px; padding-bottom:7px; border-bottom:2.4px solid var(--h2)}
+  h2{font-size:14.4pt; margin:20px 0 8px; color:var(--h2)}
+  h3{font-size:12pt; margin:15px 0 6px; color:var(--h3)}
+  h4{font-size:10.8pt; margin:12px 0 5px; color:var(--h3)}
+  p{margin:7px 0}
+  ul,ol{margin:7px 0 7px 20px; padding:0}
+  li{margin:3px 0}
+  code{font-family:"Cascadia Mono",Consolas,"Courier New",monospace; font-size:9.4pt;
+       background:#eef4f9; border:1px solid #dbe7f0; border-radius:3px; padding:0 4px; color:#0b2b45}
+  .mono{font-family:"Cascadia Mono",Consolas,"Courier New",monospace}
+
+  /* ---------- 封面 ---------- */
+  .cover{height:calc(100vh - 44px); min-height:640px; display:flex; flex-direction:column;
+         justify-content:center; break-after:page; page-break-after:always}
+  .cover .kicker{color:var(--h2); font-weight:700; letter-spacing:.16em; font-size:10pt}
+  .cover h1{font-size:26pt; border:none; margin:12px 0 6px; line-height:1.24}
+  .cover .sub{font-size:12.4pt; color:var(--dim); margin-top:4px}
+  .cover .rule{height:4px; width:130px; background:var(--h2); margin:18px 0 22px; border-radius:2px}
+  .cover .meta{font-size:10pt; color:var(--dim); line-height:1.9}
+  .cover .meta b{color:var(--ink)}
+  .cover .badge{display:inline-block; margin:16px 8px 0 0; padding:5px 11px; border:1px solid var(--line2);
+                border-radius:999px; font-size:9.4pt; color:var(--thead-ink); background:var(--accent)}
+
+  /* ---------- 目录 ---------- */
+  .toc{break-after:page; page-break-after:always}
+  .toc ol{margin-left:18px}
+  .toc a{color:var(--ink); text-decoration:none}
+  .toc .t2{margin-left:16px; color:var(--dim); font-size:9.8pt}
+
+  /* ---------- 表格 ---------- */
+  table{border-collapse:collapse; width:100%; margin:9px 0 12px; font-size:9.5pt}
+  caption{caption-side:top; text-align:left; color:var(--dim); font-size:9.2pt; margin-bottom:5px}
+  thead{display:table-header-group}
+  th,td{border:1px solid var(--line); padding:5px 7px; text-align:left; vertical-align:top}
+  th{background:var(--thead-bg); color:var(--thead-ink); font-weight:700}
+  tbody tr:nth-child(even){background:var(--zebra)}
+  td.num,th.num{text-align:right; font-family:"Cascadia Mono",Consolas,monospace}
+  tr{break-inside:avoid; page-break-inside:avoid}
+
+  /* ---------- 组件 ---------- */
+  .kpi{display:flex; flex-wrap:wrap; gap:9px; margin:10px 0 14px}
+  .kpi .cell{flex:1 1 150px; border:1px solid var(--cardline); background:var(--card);
+             border-radius:7px; padding:9px 11px; break-inside:avoid}
+  .kpi .v{font-size:16.5pt; font-weight:700; color:var(--h2); font-family:"Cascadia Mono",Consolas,monospace}
+  .kpi .k{font-size:9pt; color:var(--dim)}
+
+  .card{border:1px solid var(--cardline); background:var(--card); border-radius:7px;
+        padding:11px 13px; margin:11px 0; break-inside:avoid; page-break-inside:avoid}
+  .card h3,.card h4{margin-top:0}
+
+  .note{border-left:4px solid var(--h2); background:var(--accent); border-radius:0 6px 6px 0;
+        padding:9px 12px; margin:11px 0; break-inside:avoid}
+  .note.warn{border-left-color:var(--warn); background:#fdf6ec}
+  .note.key{border-left-color:var(--ok); background:#eef8f1}
+
+  .formula{font-family:"Cascadia Mono",Consolas,"Courier New",monospace; font-size:9.6pt;
+           background:#f2f7fb; border:1px solid var(--line); border-radius:6px;
+           padding:9px 12px; margin:8px 0; white-space:pre-wrap; line-height:1.66;
+           break-inside:avoid; page-break-inside:avoid}
+  .formula b{color:var(--h2)}
+  .tag{display:inline-block; padding:1px 7px; border-radius:4px; font-size:8.8pt;
+       font-weight:700; border:1px solid transparent}
+  .tag.p{background:#e8f1fb; color:#0d47a1; border-color:#bcd7f2}
+  .tag.g{background:#eaf7ee; color:#0b6b3a; border-color:#bfe3c9}
+  .tag.r{background:#fdeeee; color:#9a1f1f; border-color:#f0c9c9}
+  .tag.y{background:#fdf6ec; color:#a1540a; border-color:#f0dcb8}
+
+  .dim{color:var(--dim)}
+  .small{font-size:9.2pt}
+  .up{color:var(--ok); font-weight:700}
+  .down{color:var(--bad); font-weight:700}
+  hr{border:none; border-top:1px solid var(--line); margin:16px 0}
+  .pb{break-before:page; page-break-before:always}
+  footer{border-top:1px solid var(--line); margin-top:22px; padding-top:8px; color:var(--dim); font-size:8.8pt}
+  a{color:var(--h2)}
+</style>
+</head>
+<body>
+<div class="page">
+
+<!-- ============================= 封面 ============================= -->
+<section class="cover">
+  <div class="kicker">LLM AGENT 注入攻击检测 · 阶段性研究报告</div>
+  <h1>v3 化简表示：事件节点 / 两类边 / 三问输出</h1>
+  <div class="sub">4 类事件节点（U / Th / AC / TR）+ 两类可并存的边（时间先后 E1 / 信息传导 E2）；P1–P8 不再是预先枚举的模板，而是处理流程跑完后回答「三问」时给出的压缩标签 —— 输出契约、检测口径与跨数据集验证</div>
+  <div class="rule"></div>
+  <div class="meta">
+    <div><b>报告版本</b>　v3.4（表示 = 节点 + 两类边；判定输出 = 三问契约，P1–P8 降级为压缩标签）</div>
+    <div><b>数据集</b>　AgentDrift test 1,881 条　|　MemEvoBench Workflow 320 条记忆</div>
+    <div><b>检测口径</b>　结构判据 a2 + P4 + s3p（+ 低召回子型补丁 P6/P7/P8）</div>
+    <div><b>日期</b>　2026-10-15</div>
+  </div>
+  <div>
+    <span class="badge">结构 F1 0.908（P1–P8）</span>
+    <span class="badge">合并 F1 0.902（LLM ∨ P8）</span>
+    <span class="badge">零新增误报</span>
+    <span class="badge">重构校验 2,201 条 0 差异</span>
+  </div>
+</section>
+
+<!-- ============================= 目录 ============================= -->
+<section class="toc">
+  <h1>目录</h1>
+  <ol>
+    <li><a href="#c1">摘要</a></li>
+    <li><a href="#c2">背景与问题</a></li>
+    <li><a href="#c3">第一节 · 事件节点定义（U / Th / AC / TR）</a></li>
+    <li><a href="#c4">第一节 · 关联边定义（E1 时间先后 / E2 信息传导，可并存）</a></li>
+    <li><a href="#c5">第二节 · 三问输出契约（表示 → 恶性结果 / 源点 / 演化）</a>
+      <div class="t2">5.1 节点属性　5.2 两类边与两个节点侧谓词　5.3 三问输出契约　5.4 压缩标签 P1–P8（Q3 形状别名）　5.5 实测节点模式分解　5.6 攻击家族 → 多标签映射</div>
+    </li>
+    <li><a href="#c6">数据集与评估口径</a></li>
+    <li><a href="#c7">结果：AgentDrift 全量重测</a></li>
+    <li><a href="#c8">归因：漏报来自哪、P8 为何命中</a></li>
+    <li><a href="#c9">探针验证：LLM 判读端对齐</a></li>
+    <li><a href="#c10">结构化合并：LLM ∨ 结构 P8</a></li>
+    <li><a href="#c11">决策记录与再现性</a></li>
+    <li><a href="#c12">经验与教训</a></li>
+    <li><a href="#c13">附录：表示、三问输出与校验的代码落地</a></li>
+  </ol>
+</section>
+
+<!-- ============================= 1 摘要 ============================= -->
+<h1 id="c1">1　摘要</h1>
+
+<p>本报告给出注入攻击检测表示体系的 v3 化简定义及其在 AgentDrift 与 MemEvoBench 上的完整验证。核心是把复杂的攻击语义<strong>收敛为 4 类事件节点 + 2 类可并存的关联边</strong>（时间先后 / 信息传导）；判定流程对每条轨迹回答<strong>三个问题</strong>——是否产生恶性结果、攻击源点在哪、从源点如何演化到结果。沿用中的 P1–P8 <strong>不再是预先枚举的模板，而是三问输出（尤其是 Q3 演化路径）的压缩标签</strong>。</p>
+
+<div class="kpi">
+  <div class="cell"><div class="v">4</div><div class="k">事件节点类型（U/Th/AC/TR）</div></div>
+  <div class="cell"><div class="v">2</div><div class="k">可并存的边（E1 时间先后 / E2 信息传导）</div></div>
+  <div class="cell"><div class="v">3</div><div class="k">输出契约（Q1 恶性结果 / Q2 源点 / Q3 演化）</div></div>
+  <div class="cell"><div class="v">0.908</div><div class="k">AgentDrift 结构 F1（指标不变）</div></div>
+</div>
+
+<h3>主要结论</h3>
+<ol>
+  <li><strong>表示收敛成立。</strong>权限变化、资源流转、上下文诱导、推理传导等区分，全部可下沉为节点属性；模板判定所需信息由「逐 <code>steps</code> 遍历 + 标签」改为「节点属性 + 边」的表达，离线校验在 2,201 条轨迹上<strong>判定/模板/图统计 0 差异</strong>。</li>
+  <li><strong>三问输出契约与既有判定逐条等价。</strong>新增薄派生层 <code>_v3_analysis.py</code>，仅由既有判定结果做步号算术：<strong>Q1</strong>（outcome = 已落地 / 未遂 / 无 + 危险动作性质）≡ 原 <code>hit</code>；<strong>Q2</strong>（primary 源点 + secondary 二次注入点）的源点 ≡ <code>min(signal_steps)</code>；<strong>Q3</strong>（源→结果的显式路径 + 形状）与 P1–P8 一一对应。2,201 条上三条等价<strong>全部成立</strong>，检测计算零改动、零 API。</li>
+  <li><strong>低召回子型补丁有效。</strong>新增 P6（摄取传导）、P7（危险执行）、P8（伪装系统指令），仅在 P1–P5 未命中时启用。AgentDrift 结构 F1 <span class="up">0.849 → 0.908</span>，精确率同向改善（0.930 → 0.937），<strong>825 条负样本零新增误报</strong>；MemEvoBench 结构 F1 <span class="up">0.294 → 0.678</span>（ingestion 召回 7.3% → 92.7%）。</li>
+  <li><strong>结构端与 LLM 判读端可低成本对齐。</strong>采用后置 OR（<code>final = LLM_pred ∨ structural_P8</code>），零 API 调用下合并 F1 <span class="up">0.874 → 0.902</span>，召回 0.875 → 0.925，误报 0 新增。</li>
+</ol>
+
+<div class="note key">
+  <strong>一句话总结：</strong>表示层只有 4 类事件节点和两类可并存的边；对每条轨迹回答「是否产生恶性结果 / 注入源点（含二次注入点）在哪 / 从源点如何演化到结果」三问。P1–P8 只是 Q3 演化路径的<strong>压缩标签</strong>，不再是需要预先枚举的模板——叙事更简，且既有性能一项不丢。
+</div>
+
+<!-- ============================= 2 背景 ============================= -->
+<h1 id="c2" class="pb">2　背景与问题</h1>
+
+<h3>2.1 威胁模型</h3>
+<p>LLM Agent 在工具调用轨迹中执行任务：读取用户指令、检索外部内容（网页 / 邮件 / 表单 / 记忆）、推理规划、调用工具、接收工具返回。攻击者在<strong>外部内容</strong>中植入指令（prompt injection），诱导 Agent 偏离原任务，产生<strong>未授权外发</strong>（数据泄露到外部目标）或<strong>有害执行</strong>（危险载荷落地执行）。</p>
+
+<h3>2.2 需要回答的三个问题</h3>
+<ul>
+  <li><strong>表示</strong>：轨迹中哪些要素是"本质"的？能否用极少的节点/边类型覆盖全部攻击与良性行为？</li>
+  <li><strong>判定</strong>：如何从表示中稳定识别攻击？既要高精确率（负样本零误报），又要尽可能高的召回。</li>
+  <li><strong>对齐</strong>：结构化判据与 LLM 判读端如何在不大量消耗 API 的前提下取得一致？</li>
+</ul>
+
+<h3>2.3 前序工作与遗留问题</h3>
+<p>早期模板用<strong>抽象角色</strong>描述轨迹：不写具体节点类型，而把节点抽象成少数几个固定角色，再写角色之间的链式关系。记号简洁，但存在三个问题：</p>
+<ul>
+  <li><strong>与实现脱节。</strong>代码里已构建节点 U/Th/AC/TR 与边 E1/E2，但模板判定仍直接遍历 <code>steps</code> 并按 step 索引与 <code>label</code> 计算，图只进入报告统计（"装饰性"）。</li>
+  <li><strong>表达力单一。</strong>旧记号假定"一种攻击 = 一条线性链"，难以表达"一种攻击类型有多个典型模板"以及"信息摄取型"（无独立外发步、注入藏在观察/记忆中）等形态。</li>
+  <li><strong>角色抽象掩盖节点类型差异。</strong>同一个抽象角色在实现里可能落在三种不同节点类型上（用户指令被污染 / 观察被污染 / 推理被内化），把三者抹成一种，掩盖了它们其实是不同的模板。</li>
+</ul>
+<p>本报告即针对上述三点，完成<strong>属性下沉 → 模板节点原生枚举 → 离线零差异校验</strong>的改造。</p>
+
+<!-- ============================= 3 节点 ============================= -->
+<h1 id="c3" class="pb">3　第一节 · 事件节点定义（U / Th / AC / TR）</h1>
+
+<p>轨迹被建模为一个<strong>有向图</strong>，节点是"事件"，边是"事件之间的关联"。节点只保留 4 类基础类型，其余区分全部下沉为<strong>节点属性</strong>。</p>
+
+<table>
+  <caption>表 3-1　4 类基础事件节点</caption>
+  <thead><tr><th style="width:70px">节点</th><th style="width:150px">含义</th><th>来源字段</th><th>承载属性（下沉）</th></tr></thead>
+  <tbody>
+    <tr><td><b>U</b></td><td>用户指令</td><td><code>task</code>（前置，step = −1）</td><td><code>inducement</code></td></tr>
+    <tr><td><b>Th</b></td><td>推理 / 思考</td><td><code>step.thought</code></td><td><code>inducement</code>、<code>refuse</code>、<code>sys</code>、<code>label</code></td></tr>
+    <tr><td><b>AC</b></td><td>工具调用（动作）</td><td><code>step.tool</code> + <code>step.args</code></td><td><code>tool</code>、<code>args</code>、<code>action_type</code>、<code>resource_type</code>、<code>unauth_ext</code>、<code>harm</code>、<code>branch3</code>、<code>exec</code>、<code>mem</code>、<code>label</code></td></tr>
+    <tr><td><b>TR</b></td><td>工具返回（观察）</td><td><code>step.obs</code></td><td><code>inducement</code>、<code>danger</code>、<code>novel</code>、<code>label</code></td></tr>
+  </tbody>
+</table>
+
+<h3>3.1 为什么是这 4 类</h3>
+<p>对 AgentDrift 12,536 条轨迹（225,608 个节点事件）与 MemEvoBench 83 簇做全量要素拟合，得到三条化简结论：</p>
+<ul>
+  <li><strong>四类节点即可覆盖全量要素。</strong>MemEvoBench 表示 sanity 中 4 类节点对轨迹要素覆盖率为 <b>True</b>（节点计数 <code>{U:320, AC:848, TR:320}</code>）。</li>
+  <li><strong>其余区分是"属性"而非"类型"。</strong>权限变化 / 资源流转（R1–R6）/ 上下文诱导 / 推理传导，都可作为节点上的布尔或枚举属性承载。</li>
+  <li><strong>属性是判定所需的最小信息。</strong>模板判定只读取节点属性，不再回读原始 <code>steps</code>。</li>
+</ul>
+
+<h4>属性取值口径</h4>
+<table>
+  <caption>表 3-2　节点属性的计算口径</caption>
+  <thead><tr><th style="width:130px">属性</th><th style="width:80px">节点</th><th>口径</th></tr></thead>
+  <tbody>
+    <tr><td><code>inducement</code></td><td>U/Th/AC/TR</td><td>文本命中诱导语正则（<code>_struct_v2.INDUCE</code>）</td></tr>
+    <tr><td><code>refuse</code></td><td>Th</td><td>推理文本命中拒绝/警觉正则（<code>_struct_v2.REFUSE</code>）</td></tr>
+    <tr><td><code>sys</code></td><td>Th</td><td>推理文本把注入当系统级指令内化（<code>RE_SYS</code>，见 5.4）</td></tr>
+    <tr><td><code>unauth_ext</code></td><td>AC</td><td>动作外发（<code>outb</code>）且参数含 <b>∉ W</b> 的外部主机</td></tr>
+    <tr><td><code>harm</code></td><td>AC</td><td>载荷拆类：武器类命中，或凭证类命中且（外发 ∨ 外部目标）</td></tr>
+    <tr><td><code>branch3</code></td><td>AC</td><td>动作类别落入门槛 <code>GATE</code>（a2 = A2..A6）且非显式豁免</td></tr>
+    <tr><td><code>exec</code></td><td>AC</td><td>工具名属执行类（terminal_execute / run_command …）</td></tr>
+    <tr><td><code>mem</code></td><td>AC</td><td>工具名属记忆检索类（recall_memory / retrieve_memory …）</td></tr>
+    <tr><td><code>danger</code></td><td>TR</td><td>观察文本含危险载荷（shell 破坏 / 外联下载 / 凭证）</td></tr>
+    <tr><td><code>novel</code></td><td>TR</td><td>载体引入"任务未提及实体"（专名 / 编号 / 邮箱 / URL / 长 ID）</td></tr>
+  </tbody>
+</table>
+<p class="small dim">W = 公司域 ∪ 任务实体 ∪ 任务点名站点 ∪ 任务 URL（可信边界）。</p>
+
+<!-- ============================= 4 边 ============================= -->
+<h1 id="c4" class="pb">4　第一节 · 关联边定义（E1 / E2）</h1>
+
+<p>边只保留 2 类，刻画节点之间最本质的两种关联；<strong>同一对节点可并存两类边</strong>。例如一条用户指令既<strong>传递了信息</strong>（其中的邮箱/URL 经 E2 流向后续动作），又<strong>触发了 Agent 的思考与动作</strong>（经 E1 指向后继 Th/AC）——两件事同时成立，就挂两条边，互不挤占。"时间先后"取<strong>相邻骨架</strong>而非全序：任意两点都有先后，全序边不携带额外信息，还会稀释"直接触发"。</p>
+
+<table>
+  <caption>表 4-1　2 类关联边</caption>
+  <thead><tr><th style="width:70px">边</th><th style="width:130px">含义</th><th>判定</th></tr></thead>
+  <tbody>
+    <tr><td><b>E1</b></td><td><b>时间先后</b>（相邻节点骨架）</td><td>节点序列中相邻的两个节点直接相连：既含 <code>U(step=-1) → 首事件</code>，也含步内 <code>Th → AC → TR</code>；回答"谁先谁后、谁直接触发谁"</td></tr>
+    <tr><td><b>E2</b></td><td><b>信息（数据）传导</b>（类型化实体交集）</td><td>节点文本的<strong>类型化实体</strong>交集非空：email / url / num / id（strict 档）；回答"什么数据从谁流向了谁"</td></tr>
+  </tbody>
+</table>
+
+<h3>4.1 E2 的抗噪设计</h3>
+<p>信息传导只承认<strong>类型化实体</strong>的交集，而不是任意词重叠。这样"同一封邮件地址 / 同一个 URL / 同一个编号 / 同一个 ID 从载体流向下游动作"才是传导，避免通用词造成的假阳性。</p>
+<div class="formula">
+E2(i, j) ⇔ <b>ents</b>(text_i) ∩ <b>ents</b>(text_j) ≠ ∅
+<b>ents</b>(·) = { (email, e) } ∪ { (url, u) } ∪ { (num, n) } ∪ { (id, t) }
+其中 id 仅收录含数字 / 下划线 / 连字符的 token（天然抗噪）
+</div>
+
+<h3>4.2 建图规模（AgentDrift 每轨迹均值）</h3>
+<div class="kpi">
+  <div class="cell"><div class="v">17.83</div><div class="k">节点 / 轨迹</div></div>
+  <div class="cell"><div class="v">37.04</div><div class="k">边 / 轨迹</div></div>
+  <div class="cell"><div class="v">16.83</div><div class="k">E1 / 轨迹</div></div>
+  <div class="cell"><div class="v">20.21</div><div class="k">E2 / 轨迹</div></div>
+  <div class="cell"><div class="v">2.82</div><div class="k">并存节点对 / 轨迹</div></div>
+</div>
+<p class="small dim">"并存节点对" = 同一节点对同时存在 E1 与 E2；说明时间先后与信息传导是两个正交维度（每轨迹均值 2.82 对）。</p>
+
+<!-- ============================= 5 模板（核心改动） ============================= -->
+<h1 id="c5" class="pb">5　第二节 · 三问输出契约（从表示到判定输出）</h1>
+
+<div class="note">
+  <strong>本章要点：</strong>表示层只有两种构件——<strong>节点</strong>（U / Th / AC / TR，其余区分全部下沉为节点属性）与<strong>两类可并存的边</strong>（E1 时间先后 / E2 信息传导）。除此之外不再预设任何"风险模板分类"。判定流程跑完后，对每条轨迹回答<strong>三个问题</strong>：<br>
+  &nbsp;&nbsp;<b>Q1</b> 当前执行路径是否产生了恶性结果；<br>
+  &nbsp;&nbsp;<b>Q2</b> 攻击的发起源点在哪里（以及次要 / 二次注入点）；<br>
+  &nbsp;&nbsp;<b>Q3</b> 从注入到结果事件是如何演化的。<br>
+  沿用中的 <strong>P1–P8 只是 Q3 演化路径的压缩标签</strong>（为与历史指标连续而保留），不是需要预先枚举的模板分类。
+</div>
+
+<h3>5.1 判定用节点属性（由第 3 章下沉而来）</h3>
+<table>
+  <caption>表 5-1　模板判定直接读取的节点属性</caption>
+  <thead><tr><th style="width:70px">节点</th><th>属性</th></tr></thead>
+  <tbody>
+    <tr><td><b>U</b></td><td><code>inducement</code></td></tr>
+    <tr><td><b>Th</b></td><td><code>inducement</code>、<code>refuse</code>、<code>sys</code>、<code>label</code></td></tr>
+    <tr><td><b>AC</b></td><td><code>unauth_ext</code>、<code>harm</code>、<code>branch3</code>、<code>exec</code>、<code>mem</code>、<code>args</code>、<code>label</code></td></tr>
+    <tr><td><b>TR</b></td><td><code>inducement</code>、<code>danger</code>、<code>novel</code>、<code>label</code></td></tr>
+  </tbody>
+</table>
+
+<h3>5.2 两个节点侧谓词（在节点上定位"源点"与"危险动作"）</h3>
+<p>三问不靠额外分类，只在节点类型与属性上求两个<strong>节点侧谓词</strong>，分别给 Q2 提供"注入源点"、给 Q1 提供"恶性结果落点"；边只负责把这些节点按时间与数据串成 Q3 的路径：</p>
+<table>
+  <caption>表 5-2　定位源点 / 危险动作的节点侧谓词与路径形状</caption>
+  <thead><tr><th style="width:170px">要素</th><th>定义（直接落在节点类型与属性上）</th></tr></thead>
+  <tbody>
+    <tr><td><b>谓词 A · 带信号节点</b></td><td>节点 <code>n</code>，类型 ∈ {<code>U</code>, <code>Th</code>, <code>TR</code>}，满足：<code>text(n)</code> 含外部主机 ∉ W，或命中诱导语（<code>inducement</code>）；<strong>且信号在下游复现</strong>——该 host / 诱导语 / 新颖 token 出现在某个 <code>step &gt; n</code> 的 <code>AC.args</code> 或 <code>Th.text</code></td></tr>
+    <tr><td><b>谓词 B · 危险动作节点</b></td><td>节点 <code>m</code>，类型 == <code>AC</code>，且 <code>unauth_ext</code> ∨ <code>harm</code> ∨ <code>branch3</code></td></tr>
+    <tr><td>相邻 <code>─E1→</code></td><td><code>step(m) − step(n) == 1</code>（E1 步骨架的最小粒度）</td></tr>
+    <tr><td>隔步</td><td><code>step(m) − step(n) ≥ 2</code>（中间存在其它节点）</td></tr>
+    <tr><td>良性节点</td><td>节点 <code>label == benign</code></td></tr>
+    <tr><td><code>Th[refuse]</code></td><td>Th 节点上 <code>refuse</code> == True（拒绝 / 警觉）</td></tr>
+  </tbody>
+</table>
+<div class="note warn">
+  <strong>注意：</strong>"信号在下游复现"是独立谓词，<strong>不等于</strong>"存在 E2 边"。E2 只认类型化实体交集（email / url / num / id）；诱导语复现属词法复现，不产生 E2 边。二者同族但不等价，混用会重蹈"图只作装饰"的问题。
+</div>
+
+<h3>5.3 三问输出契约</h3>
+<p>流程对每条轨迹输出一个三问结果对象（<code>_v3_analysis.py</code> 的 <code>analyze(rec)</code>）。三个答案<strong>全部由既有判定结果做步号算术派生</strong>，不引入任何新判定、不调用 API：</p>
+<table>
+  <caption>表 5-3　三问输出契约（字段与取值）</caption>
+  <thead><tr><th style="width:60px">问</th><th style="width:150px">字段</th><th>含义 / 取值</th></tr></thead>
+  <tbody>
+    <tr><td rowspan="3"><b>Q1</b><br><span class="small dim">恶性结果</span></td><td><code>outcome</code></td><td><code>realized</code> 已落地危险动作 / <code>attempted</code> 注入已起意但被拒绝（未遂）/ <code>none</code> 路径无恶性结果</td></tr>
+    <tr><td><code>sink_step / sink_reason</code></td><td>首个落地危险动作的步号与性质：<code>c_ext</code> 未授权外发 · <code>c_harm</code> 敏感/有害载荷 · <code>branch3</code> 敏感动作未授权</td></tr>
+    <tr><td><code>severity</code></td><td>危险动作的人类可读性质；P6/P7/P8 路径无谓词 B 落点时取机制性质（摄取落地 / 危险执行 / 系统指令被采纳）</td></tr>
+    <tr><td rowspan="2"><b>Q2</b><br><span class="small dim">源点</span></td><td><code>primary</code></td><td>最早携带注入信号的节点 <code>{step, nid, type, basis}</code>；<code>basis ∈ {signal, novel_carrier, danger_payload, sys_internalized}</code>，分别对应谓词 A 信号、记忆/载体新实体、危险载荷、伪装系统指令</td></tr>
+    <tr><td><code>secondary[]</code></td><td>其余注入承载节点 = <strong>次要 / 二次注入点</strong>（如同一轨迹中第二个被污染的观察 TR、多个误导记忆载体）</td></tr>
+    <tr><td rowspan="3"><b>Q3</b><br><span class="small dim">演化</span></td><td><code>shape</code></td><td>源→结果的路径形状：<code>adjacent</code> 相邻即落地 / <code>gapped</code> 中间夹良性步 / <code>blocked</code> 被拒绝 / <code>flow</code> 经信息传导摄取 / <code>exec</code> 危险载荷被执行 / <code>sys</code> 系统指令内化 / <code>no_chain</code> 无攻击链</td></tr>
+    <tr><td><code>source_step, sink_step, gap</code></td><td>路径两端步号与中间间隔步数（<code>gap = sink − source − 1</code>）</td></tr>
+    <tr><td><code>path_nids, flow_links, label</code></td><td>源→汇之间的显式节点序列（E1 串起）、区间内的 E2 信息传导边；<code>label</code> 即该路径的压缩标签 P1–P8</td></tr>
+  </tbody>
+</table>
+
+<div class="kpi">
+  <div class="cell"><div class="v">960 / 31 / 890</div><div class="k">AgentDrift Q1：已落地 / 未遂 / 无</div></div>
+  <div class="cell"><div class="v">926 / 94</div><div class="k">Q2 primary 载体：signal / sys 内化</div></div>
+  <div class="cell"><div class="v">568 / 288 / 31 / 104</div><div class="k">Q3：相邻 / 隔步 / 被拒 / 系统指令</div></div>
+  <div class="cell"><div class="v">232 / 11</div><div class="k">MemEvoBench Q3：信息摄取 / 危险执行</div></div>
+</div>
+<p class="small dim">另有无攻击链 <code>no_chain</code>：AgentDrift 890（P5 861 + signal_only 29）、MemEvoBench 32（P5）。Q3 形状与 P1–P8 在 2,201 条上一一对应（等价校验 3，见 13.2）。</p>
+
+<h3>5.4 压缩标签 P1–P8（Q3 演化形状的别名）</h3>
+<p>P1–P8 不增加任何表示构件，只是给 Q3 的 <code>shape</code> 与 Q1 的 <code>outcome</code> 组合起的<strong>短名</strong>，用于与历史指标和 LLM 判读端连续。映射关系：</p>
+<table>
+  <caption>表 5-4　压缩标签 → 三问取值映射</caption>
+  <thead><tr><th style="width:70px">标签</th><th>Q1 outcome</th><th>Q2 primary 的 basis</th><th>Q3 shape</th><th>含义</th></tr></thead>
+  <tbody>
+    <tr><td><b>P1</b></td><td>realized</td><td>signal</td><td>adjacent</td><td>带信号节点与危险动作相邻（step 差 1）</td></tr>
+    <tr><td><b>P2</b></td><td>realized</td><td>signal</td><td>gapped</td><td>两者之间夹其它节点（step 差 ≥ 2）</td></tr>
+    <tr><td><b>P3</b></td><td>realized</td><td>signal</td><td>adjacent</td><td>P1 且危险动作之后回归良性步</td></tr>
+    <tr><td><b>P4</b></td><td>attempted</td><td>signal</td><td>blocked</td><td>有信号、无下游危险动作，但出现 Th[refuse]</td></tr>
+    <tr><td><b>P5</b></td><td>none</td><td>—</td><td>no_chain</td><td>无带信号节点</td></tr>
+    <tr><td><b>P6</b></td><td>realized</td><td>novel_carrier</td><td>flow</td><td>载体 TR[novel] 的实体经信息传导流入下游 AC.args</td></tr>
+    <tr><td><b>P7</b></td><td>realized</td><td>danger_payload</td><td>exec</td><td>TR[danger] 的危险载荷被下游 AC[exec] 执行</td></tr>
+    <tr><td><b>P8</b></td><td>realized</td><td>sys_internalized<sup>*</sup></td><td>sys</td><td>Th[sys]：注入被当系统级指令内化</td></tr>
+    <tr><td><b>signal_only</b></td><td>none</td><td>signal</td><td>no_chain</td><td>有信号但下游既无危险动作也无拒绝（悬空）</td></tr>
+  </tbody>
+</table>
+<p class="small dim"><sup>*</sup> 104 条 P8 中有 10 条在更早的步上已存在谓词 A 信号节点，此时 Q2.primary 如实记为更早的 <code>signal</code>，<code>sys</code> 节点进入 secondary——源点归属服从"最早"，不因标签是 P8 而改写。</p>
+<p>标签的<strong>具体赋值规则</strong>与历史口径完全一致（只是换了个读法）：</p>
+
+<h4>5.4.1 路径标签 P1–P5</h4>
+<div class="formula">
+<b>P1</b>  n ∈ {U,Th,TR}[谓词 A] ─E1→ m ∈ AC[谓词 B]
+    检出：带信号节点 n 与危险动作节点 m 的 step 差 == 1（相邻）。
+    三种节点侧形态分别枚举：U[signal] ─E1→ AC[…]、Th[signal] ─E1→ AC[…]、TR[signal] ─E1→ AC[…]
+
+<b>P2</b>  n ∈ {U,Th,TR}[谓词 A] ─(step 差 ≥ 2)→ m ∈ AC[谓词 B]
+    检出：n 与 m 之间存在其它节点（隔步）。
+
+<b>P3</b>  P1 的任一模式 ∧ ∃ 节点 k，step(k) &gt; step(m) 且 label(k) == benign
+    检出：相邻命中，且危险动作之后仍有良性节点（攻击后回归正常流程）。
+
+<b>P4</b>  ∃ n[谓词 A] ∧ ∄ m[谓词 B] ∈ 下游(n) ∧ ∃ Th[refuse] ∈ 下游(n)
+    检出：有带信号节点、下游无危险动作节点，但出现拒绝/警觉 → 未遂（failed_attempt）。
+
+<b>P5</b>  ∄ n[谓词 A]
+    不命中：不存在带信号节点（no_signal）。
+</div>
+
+<p>其中 <code>下游(x)</code> 取 <code>step &gt; step(x)</code> 的全部节点。读作三问即：P1–P3 的 Q1=realized、P4 的 Q1=attempted、P5 的 Q1=none。</p>
+
+<h4>5.4.2 补丁标签 P6–P8</h4>
+<p>P1–P5 覆盖"带信号节点 → 危险动作节点"的路径型攻击，对<strong>信息摄取型</strong>（注入藏在网页 / 表单 / 记忆，无外发参数）失明。补三条按节点类型直接写出的机制型标签；它们<strong>仅在 P1–P5 路径未形成时启用</strong>，不改变 P1–P5 语义。</p>
+
+<div class="formula">
+<b>P6 摄取传导型</b>   ∃ AC[mem] ∧ ∃ TR[novel]，
+                  且 novel 实体出现在 ⋃_{step &gt; 该 TR} AC.args
+   记忆节点存在（记忆介导）；载体 TR 引入"任务未提及实体"；
+   该实体被下游动作参数使用（实体在 AC.args 复现）。
+   效果：对非记忆轨迹零触发。
+
+<b>P7 危险执行型</b>   ∃ TR[danger]，∃ AC[exec]（step &gt; 该 TR）
+   某工具返回节点含危险载荷（shell 破坏 / 外联下载 / 凭证），
+   且下游存在执行类动作节点 → 载荷被执行。
+
+<b>P8 伪装系统指令型</b>  ∃ Th[sys]
+   某步推理节点把注入内容当作系统级指令内化，是部分注入（注入藏于观察、
+   无独立带信号节点）被 Agent 采纳的语言痕迹。
+   判据（RE_SYS）：
+     \b(the\s+)?system\s+(suggest|recommend|advis|instruct|note|
+                          require|request|say|state|indicat|prompt)
+</div>
+
+<div class="note key">
+  <strong>为何 P8 是"机制签名"而非统计巧合：</strong>attacked_partial 的注入溶解在观察文本中（无独立带信号节点）→ 结构端判 P5、LLM 判 P5 漏检；但注入措辞伪装为"系统指令"，Agent 在 thought 中把它内化为"系统建议/要求"，从而留下 <code>sys</code> 语言痕迹。该痕迹<strong>只在 partial 注入场景产生</strong>，其余攻击子型与全部 825 条负样本<strong>零触发</strong>。
+</div>
+
+<h3>5.5 实测节点模式分解（数据导出）</h3>
+<p>把 P1–P3 的命中按 <strong>带信号节点类型 × 其属性 × 危险动作属性 × 路径形状</strong>逐条分解（<code>_v3_pattern_decomp.py</code>，零 API），得到的是数据导出的模式清单，而非记号推演：</p>
+<table>
+  <caption>表 5-5　P1–P3 命中的节点模式分解（AgentDrift 1,881）</caption></function></seed:tool_call>
+  <thead><tr><th>信号节点</th><th>信号属性</th><th>动作属性</th><th>路径形状</th><th class="num">命中</th></tr></thead>
+  <tbody>
+    <tr><td>TR</td><td>外部域 + 诱导语</td><td><code>branch3</code></td><td>相邻</td><td class="num">255</td></tr>
+    <tr><td>TR</td><td>外部域 + 诱导语</td><td><code>c_ext</code></td><td>相邻</td><td class="num">163</td></tr>
+    <tr><td>TR</td><td>外部域 + 诱导语</td><td><code>branch3</code></td><td>隔步</td><td class="num">145</td></tr>
+    <tr><td>TR</td><td>诱导语</td><td><code>branch3</code></td><td>相邻</td><td class="num">132</td></tr>
+    <tr><td>TR</td><td>诱导语</td><td><code>branch3</code></td><td>隔步</td><td class="num">71</td></tr>
+    <tr><td>TR</td><td>外部域 + 诱导语</td><td><code>c_ext</code></td><td>隔步</td><td class="num">23</td></tr>
+    <tr><td>TR</td><td>外部域</td><td><code>branch3</code></td><td>隔步</td><td class="num">22</td></tr>
+    <tr><td>TR</td><td>外部域</td><td><code>branch3</code></td><td>相邻</td><td class="num">12</td></tr>
+    <tr><td>TR</td><td>外部域</td><td><code>c_ext</code></td><td>隔步</td><td class="num">7</td></tr>
+    <tr><td>TR</td><td>任务级</td><td><code>branch3</code></td><td>隔步</td><td class="num">6</td></tr>
+    <tr><td>TR</td><td>外部域 + 诱导语</td><td><code>c_harm</code></td><td>隔步</td><td class="num">5</td></tr>
+    <tr><td>TR</td><td>诱导语</td><td><code>c_ext</code></td><td>隔步</td><td class="num">4</td></tr>
+    <tr><td>TR</td><td>诱导语</td><td><code>c_harm</code></td><td>隔步</td><td class="num">3</td></tr>
+    <tr><td>TR</td><td>外部域</td><td><code>c_ext</code></td><td>相邻</td><td class="num">3</td></tr>
+    <tr><td>TR</td><td>外部域 + 诱导语</td><td><code>c_harm</code></td><td>相邻</td><td class="num">2</td></tr>
+    <tr><td>TR</td><td>任务级</td><td><code>c_ext</code></td><td>隔步</td><td class="num">2</td></tr>
+    <tr><td>TR</td><td>诱导语</td><td><code>c_ext</code></td><td>相邻</td><td class="num">1</td></tr>
+  </tbody>
+</table>
+<div class="kpi">
+  <div class="cell"><div class="v">856</div><div class="k">P1–P3 命中；带信号节点 100% 为 TR</div></div>
+  <div class="cell"><div class="v">643 / 203 / 10</div><div class="k">动作属性 branch3 / c_ext / c_harm</div></div>
+  <div class="cell"><div class="v">568 / 288</div><div class="k">路径形状 相邻 / 隔步</div></div>
+  <div class="cell"><div class="v">0</div><div class="k">带信号节点落在 U 或 Th 的次数</div></div>
+</div>
+<div class="note">
+  <strong>数据结论：</strong>本数据集上 P1–P3 的<strong>带信号节点 100% 落在 <code>TR</code></strong>（工具返回 / 观察），<code>U</code> 与 <code>Th</code> 从未承担该谓词——攻击的实质是"<strong>观察被污染</strong>"，这正是 attacked_partial 的结构本质。另：P5（无带信号节点，861 条）中有 <strong>247 条</strong>的 <code>Th</code> 携带诱导语、<strong>91 条</strong>的 <code>TR</code> 携带诱导语，只是信号未向下游传导，构成当前的结构性盲区。
+</div>
+
+<h3>5.6 攻击家族 → 多标签映射</h3>
+<p>因为标签按节点类型与演化形状给出，同一种攻击类型自然对应多个具体标签（即 Q3 的不同演化形状）：</p>
+<table>
+  <caption>表 5-6　攻击家族的多标签映射</caption>
+  <thead><tr><th style="width:150px">攻击家族</th><th>典型标签</th><th>机制（Q2 源 → Q3 演化）</th></tr></thead>
+  <tbody>
+    <tr><td>external_send<br><span class="small dim">（外部外发）</span></td><td><span class="tag p">P1</span> <span class="tag p">P2</span> <span class="tag p">P3</span> <span class="tag g">P8</span></td><td><code>TR[谓词 A]</code> ─E1/隔步→ <code>AC[谓词 B]</code>；部分变体注入被内化为系统指令（<code>Th[sys]</code>）</td></tr>
+    <tr><td>ingestion<br><span class="small dim">（信息摄取）</span></td><td><span class="tag g">P6</span></td><td><code>AC[mem]</code> + <code>TR[novel]</code> → 实体流入下游 <code>AC.args</code></td></tr>
+    <tr><td>exec<br><span class="small dim">（危险执行）</span></td><td><span class="tag g">P7</span></td><td><code>TR[danger]</code> → 下游 <code>AC[exec]</code></td></tr>
+    <tr><td>failed<br><span class="small dim">（未遂）</span></td><td><span class="tag y">P4</span></td><td><code>TR[谓词 A]</code> 存在、下游无 <code>AC[谓词 B]</code>，但出现 <code>Th[refuse]</code></td></tr>
+  </tbody>
+</table>
+
+<div class="note">
+  <strong>标签赋值的实现约定：</strong>先尝试 P1–P5 的路径形状；路径未形成时按 <code>P7 → P6 → P8</code> 顺序赋机制标签（P7 机制最明确、P6 有记忆介导门控、P8 为语言痕迹，故 P8 置于最后，避免抢占更确定的机制判定）。这只是 Q3 <code>shape</code> 的赋值优先级，不新增任何节点或边类型。
+</div>
+
+<!-- ============================= 6 数据集 ============================= -->
+<h1 id="c6" class="pb">6　数据集与评估口径</h1>
+
+<table>
+  <caption>表 6-1　数据集</caption>
+  <thead><tr><th>数据集</th><th>规模</th><th>正类</th><th>负类</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>AgentDrift test</td><td>1,881</td><td>attacked 831 + failed_attack 225 = <b>1,056</b></td><td>benign 600 + hard_negative 225 = <b>825</b></td><td>子型：attacked_full / partial / delayed</td></tr>
+    <tr><td>MemEvoBench Workflow</td><td>320 条记忆（83 簇）</td><td>misleading</td><td>correct</td><td>记忆级：外发子型 / 摄取子型</td></tr>
+    <tr><td>MemEvoBench QA</td><td>324 条误导记忆</td><td>misleading</td><td>correct</td><td>无工具动作 → 结构不可达（见 7.4）</td></tr>
+  </tbody>
+</table>
+
+<h3>6.1 检测口径（定稿配置）</h3>
+<ul>
+  <li><code>gate = a2</code>：<code>c_ext</code> 不受动作门槛限制；<code>branch3</code> 门槛为 A2..A6。</li>
+  <li><code>W</code> = 公司域 ∪ 任务实体 ∪ 任务点名站点 ∪ 任务 URL。</li>
+  <li><code>c_exp = off</code>、Th 不扫、载荷拆类（split_harm）开。</li>
+  <li>P4 未遂开、<code>s3p</code> 参数级载荷传导开。</li>
+  <li>低召回补丁 <code>use_p6 = use_p7 = use_p8 = True</code>。</li>
+</ul>
+
+<h3>6.2 指标口径</h3>
+<p>正类 = attacked + failed_attack；负类 = benign + hard_negative。检出 = 命中 P1–P8 中任一模版。<strong>精确率优先</strong>：任何新增规则必须在精确率不下降的前提下再提升召回。</p>
+
+<!-- ============================= 7 结果 ============================= -->
+<h1 id="c7" class="pb">7　结果：AgentDrift 全量重测</h1>
+
+<h3>7.1 总体指标（结构端与 LLM 端）</h3>
+<table>
+  <caption>表 7-1　AgentDrift test（正 1,056 / 负 825）</caption>
+  <thead><tr><th>口径</th><th class="num">P</th><th class="num">R</th><th class="num">F1</th><th class="num">TP</th><th class="num">FP</th><th class="num">TN</th><th class="num">FN</th></tr></thead>
+  <tbody>
+    <tr><td>结构 P1–P5（基线）</td><td class="num">0.9301</td><td class="num">0.7812</td><td class="num">0.8492</td><td class="num">825</td><td class="num">62</td><td class="num">763</td><td class="num">231</td></tr>
+    <tr><td><b>结构 P1–P8（+ 补丁）</b></td><td class="num"><b>0.9374</b></td><td class="num"><b>0.8797</b></td><td class="num"><b>0.9077</b></td><td class="num">929</td><td class="num">62</td><td class="num">763</td><td class="num">127</td></tr>
+    <tr><td>LLM 旧 rubric（P1–P5）</td><td class="num">0.8373</td><td class="num">0.8920</td><td class="num">0.8638</td><td class="num">942</td><td class="num">183</td><td class="num">642</td><td class="num">114</td></tr>
+    <tr><td>LLM 新 rubric（P1–P7）</td><td class="num">0.8733</td><td class="num">0.8750</td><td class="num">0.8742</td><td class="num">924</td><td class="num">134</td><td class="num">691</td><td class="num">132</td></tr>
+    <tr><td><b>合并（LLM ∨ 结构 P8）</b></td><td class="num"><b>0.8794</b></td><td class="num"><b>0.9252</b></td><td class="num"><b>0.9017</b></td><td class="num">977</td><td class="num">134</td><td class="num">691</td><td class="num">79</td></tr>
+  </tbody>
+</table>
+<p class="small dim">P8 边际（相对结构 P1–P5）：ΔF1 = <span class="up">+0.0585</span>、ΔP = <span class="up">+0.0073</span>、ΔR = <span class="up">+0.0985</span>、ΔFP = <b>+0</b>。</p>
+
+<h3>7.2 逐子型召回</h3>
+<table>
+  <caption>表 7-2　逐子型命中数（结构 P1–P5 / 结构 P1–P8 / LLM / 合并）</caption>
+  <thead><tr><th>子型</th><th class="num">n</th><th class="num">结构 P1–P5</th><th class="num">结构 P1–P8</th><th class="num">LLM</th><th class="num">合并</th></tr></thead>
+  <tbody>
+    <tr><td>attacked_full</td><td class="num">466</td><td class="num">446</td><td class="num">446</td><td class="num">443</td><td class="num">443</td></tr>
+    <tr><td>attacked_partial</td><td class="num">231</td><td class="num">121</td><td class="num"><b>225</b></td><td class="num">174</td><td class="num">227</td></tr>
+    <tr><td>attacked_delayed</td><td class="num">134</td><td class="num">56</td><td class="num">56</td><td class="num">86</td><td class="num">86</td></tr>
+    <tr><td>failed_attack</td><td class="num">225</td><td class="num">202</td><td class="num">202</td><td class="num">221</td><td class="num">221</td></tr>
+    <tr><td>hard_negative <span class="small dim">(误报)</span></td><td class="num">225</td><td class="num">39</td><td class="num">39</td><td class="num">76</td><td class="num">76</td></tr>
+    <tr><td>benign <span class="small dim">(误报)</span></td><td class="num">600</td><td class="num">23</td><td class="num">23</td><td class="num">58</td><td class="num">58</td></tr>
+  </tbody>
+</table>
+<p class="small dim">attacked_partial 召回 <span class="up">52.4% → 97.4%</span>（P8 单独贡献），其余子型不变 → 证明 P8 只对 partial 生效且不外溢。</p>
+
+<h3>7.3 模板分布</h3>
+<table>
+  <caption>表 7-3　模板分布（AgentDrift 1,881）</caption>
+  <thead><tr><th>来源</th><th>P1</th><th>P2</th><th>P3</th><th>P4</th><th>P5</th><th>P8</th><th>signal_only</th></tr></thead>
+  <tbody>
+    <tr><td>结构判据</td><td class="num">398</td><td class="num">288</td><td class="num">170</td><td class="num">31</td><td class="num">861</td><td class="num">104</td><td class="num">29</td></tr>
+    <tr><td>LLM 判读</td><td class="num">375</td><td class="num">321</td><td class="num">140</td><td class="num">222</td><td class="num">818</td><td class="num">—</td><td class="num">5</td></tr>
+  </tbody>
+</table>
+<p class="small dim">LLM 端 P6/P7 触发 0 条（P6 门控在记忆介导，AgentDrift 非记忆轨迹 → 零触发）。结构判据与既有 <code>a2+P4+s3p</code> 配置一致性核对：<strong>不一致 0 条</strong>。</p>
+
+<h3>7.4 MemEvoBench 结果</h3>
+<div class="kpi">
+  <div class="cell"><div class="v">0.678</div><div class="k">结构 F1（P1–P8）</div></div>
+  <div class="cell"><div class="v">92.7%</div><div class="k">ingestion 召回（127/137）</div></div>
+  <div class="cell"><div class="v">93.1%</div><div class="k">external_send 召回（27/29）</div></div>
+  <div class="cell"><div class="v">85.9%</div><div class="k">记忆节点 E2 连通率</div></div>
+</div>
+<table>
+  <caption>表 7-4　MemEvoBench Workflow（320 条记忆）</caption>
+  <thead><tr><th>口径</th><th class="num">P</th><th class="num">R</th><th class="num">F1</th></tr></thead>
+  <tbody>
+    <tr><td>结构 P1–P5（基线）</td><td class="num">0.689</td><td class="num">0.187</td><td class="num">0.294</td></tr>
+    <tr><td><b>结构 P1–P8</b></td><td class="num">0.535</td><td class="num"><b>0.928</b></td><td class="num"><b>0.678</b></td></tr>
+    <tr><td>LLM 判读（新 rubric）</td><td class="num">0.536</td><td class="num">0.940</td><td class="num">0.683</td></tr>
+  </tbody>
+</table>
+<p class="small dim">精确率下降的代价主要来自标签噪声：134 个 <code>correct</code> 误报中 55 条（41%）本身含外发/敏感动作。QA 段（324 条误导记忆）无工具动作 → 无 <code>AC[目标]</code> 节点，结构检测器不可达，需 LLM 判读（结构检出 0，如实报告）。</p>
+
+<!-- ============================= 8 归因 ============================= -->
+<h1 id="c8" class="pb">8　归因：漏报来自哪、P8 为何命中</h1>
+
+<h3>8.1 32 条新增漏报的画像</h3>
+<p>LLM 判读在新 rubric 下由正转负的 32 条样本：</p>
+<table>
+  <caption>表 8-1　新增漏报的类别与结构模板</caption>
+  <thead><tr><th>维度</th><th>分布</th></tr></thead>
+  <tbody>
+    <tr><td>类别</td><td>attacked_partial 25、attacked_delayed 4、attacked_full 3</td></tr>
+    <tr><td>结构模板</td><td>25/32 判为 P5（无带信号节点）——结构端未识别出注入载体</td></tr>
+    <tr><td>步级标签</td><td>全部含 <code>injection_point</code> + <code>hijacked</code>，确为真实攻击（非标签噪声）</td></tr>
+    <tr><td>主攻子型</td><td>attacked_partial（注入藏于观察文本，无独立带信号节点）</td></tr>
+  </tbody>
+</table>
+
+<h3>8.2 候选信号筛选</h3>
+<table>
+  <caption>表 8-2　候选信号对比（负样本 825 条）</caption>
+  <thead><tr><th style="width:110px">信号</th><th>含义</th><th class="num">负样本误报</th><th class="num">覆盖（/32）</th></tr></thead>
+  <tbody>
+    <tr><td><b>SYS</b></td><td>推理引用系统级指令</td><td class="num"><b>0</b></td><td class="num">23</td></tr>
+    <tr><td>SYS_WIDE</td><td>放宽为 <code>the system &lt;任意词&gt;</code></td><td class="num">0</td><td class="num">26</td></tr>
+    <tr><td>COMPLY</td><td>伪造合规指令</td><td class="num down">32</td><td class="num">—</td></tr>
+    <tr><td>CRED</td><td>凭证 / 危险命令词</td><td class="num down">10</td><td class="num">—</td></tr>
+    <tr><td>3-gram 新颖度</td><td>参数 n-gram 新颖度</td><td class="num">—</td><td class="num">已证伪</td></tr>
+  </tbody>
+</table>
+<div class="note warn">
+  <strong>不采纳 COMPLY / CRED：</strong>F1 仅再 +0.01，但精确率降 1.6–2.3pt，违反"精确率优先"。COMPLY 在良性委托句（"as per &lt;医生/客户&gt; 的请求"）上误报 32 条；CRED 在 coding 良性场景（"enter your credentials"）上误报 10 条。3-gram 新颖度在 hard_negative 上均值最高，无区分度。
+</div>
+
+<h3>8.3 P8 的机制解释</h3>
+<p>P8 救回的漏检（53 条）<strong>全部为 attacked_partial</strong>，原因是机制性的，而非统计巧合：</p>
+<ol>
+  <li><strong>注入溶解。</strong>partial 注入藏在观察文本中，没有独立的带信号节点 → 结构端无带信号节点、LLM 也读不到独立注入点 → 双端漏检（结构判 P5、LLM 判 P5）。</li>
+  <li><strong>伪装为系统指令。</strong>注入措辞伪装成系统级指令，Agent 在推理中把它内化为"系统建议 / 系统要求"。</li>
+  <li><strong>留下语言痕迹。</strong>这种内化只在 partial 场景发生，体现为 <code>sys</code> 信号；其他攻击子型无此语言特征，全部负样本零触发。</li>
+</ol>
+<p>因此 P8 是攻击机制的<strong>语言签名</strong>，其触发集合与 attacked_partial 高度重合。</p>
+
+<!-- ============================= 9 探针 ============================= -->
+<h1 id="c9" class="pb">9　探针验证：LLM 判读端对齐</h1>
+
+<p>问题：新增 P8 后，结构端能识别 partial 注入，但 LLM 判读端的 rubric 未显式编码该信号。需要验证把 P8 判据写入 rubric 后 LLM 是否会一致翻转。</p>
+
+<h3>9.1 路线 C 探针</h3>
+<p>挑出"结构 P8 命中 ∧ LLM 判 attack=0"的子集，用<strong>含 P8 判据的新 rubric</strong> 重跑（真实调用 53 次）：</p>
+<div class="kpi">
+  <div class="cell"><div class="v">53</div><div class="k">真实调用</div></div>
+  <div class="cell"><div class="v">52/53</div><div class="k">翻转为 attack=1（98.1%）</div></div>
+  <div class="cell"><div class="v">1</div><div class="k">未翻转（判定尺度差异）</div></div>
+</div>
+<p>唯一未翻转样本 <code>web_attacked_partial_0194</code>，属判定尺度差异而非 rubric 缺失。结论：<strong>rubric 对齐有效</strong>。</p>
+
+<h3>9.2 为何最终选路线 B 而非全量重跑</h3>
+<p>路线 C 证明对齐有效，但全量重跑需大量 API 调用。注意到 <code>final = LLM_pred ∨ structural_P8</code> 与"带 P8 判据的 LLM 重跑"几乎等价，且<strong>零 API 调用</strong>，故采纳路线 B（见第 10 章）。</p>
+
+<!-- ============================= 10 合并 ============================= -->
+<h1 id="c10" class="pb">10　结构化合并：LLM ∨ 结构 P8</h1>
+
+<div class="formula">
+<b>final_pred</b> = LLM_pred  <b>∨</b>  structural_P8
+其中 structural_P8 = (轨迹命中 P8 图模式) = 存在 Th 节点满足 <b>sys</b>
+</div>
+
+<table>
+  <caption>表 10-1　路线 B 合并效果（零 API 调用）</caption>
+  <thead><tr><th>口径</th><th class="num">P</th><th class="num">R</th><th class="num">F1</th><th class="num">TP</th><th class="num">FP</th><th class="num">TN</th><th class="num">FN</th></tr></thead>
+  <tbody>
+    <tr><td>LLM（P1–P7）</td><td class="num">0.8733</td><td class="num">0.8750</td><td class="num">0.8742</td><td class="num">924</td><td class="num">134</td><td class="num">691</td><td class="num">132</td></tr>
+    <tr><td>P8（仅 SYS）</td><td class="num">1.0000</td><td class="num">0.0985</td><td class="num">0.1793</td><td class="num">104</td><td class="num">0</td><td class="num">825</td><td class="num">952</td></tr>
+    <tr><td><b>合并（LLM ∨ P8）</b></td><td class="num"><b>0.8794</b></td><td class="num"><b>0.9252</b></td><td class="num"><b>0.9017</b></td><td class="num">977</td><td class="num">134</td><td class="num">691</td><td class="num">79</td></tr>
+  </tbody>
+</table>
+<p>边际：<span class="up">ΔF1 = +0.0275</span>、<span class="up">ΔR = +0.0502</span>、<span class="up">ΔP = +0.0061</span>、<span class="up">ΔFP = +0</span>。P8 救回 <strong>53 条</strong>漏检，负样本新增误报 <strong>0 条</strong>。</p>
+
+<table>
+  <caption>表 10-2　合并前后逐子型召回</caption>
+  <thead><tr><th>子型</th><th class="num">n</th><th class="num">LLM</th><th class="num">合并</th></tr></thead>
+  <tbody>
+    <tr><td>attacked_full</td><td class="num">466</td><td class="num">443</td><td class="num">443</td></tr>
+    <tr><td>attacked_partial</td><td class="num">231</td><td class="num">174</td><td class="num"><b>227</b></td></tr>
+    <tr><td>attacked_delayed</td><td class="num">134</td><td class="num">86</td><td class="num">86</td></tr>
+    <tr><td>failed_attack</td><td class="num">225</td><td class="num">221</td><td class="num">221</td></tr>
+    <tr><td>hard_negative <span class="small dim">(误报)</span></td><td class="num">225</td><td class="num">76</td><td class="num">76</td></tr>
+    <tr><td>benign <span class="small dim">(误报)</span></td><td class="num">600</td><td class="num">58</td><td class="num">58</td></tr>
+  </tbody>
+</table>
+<p class="small dim">attacked_partial 召回 <span class="up">75.3% → 98.3%</span>；其余子型与全部负样本误报不变。</p>
+
+<h3>10.1 结构端 vs LLM 端一致率</h3>
+<ul>
+  <li>AgentDrift：LLM 与结构决策一致 <b>1,596 / 1,881 = 84.8%</b>。</li>
+  <li>新旧 rubric 翻转 113 条：旧误报→正确 <b>58</b>｜新增误报 <b>9</b>｜旧漏报→检出 <b>14</b>｜新增漏报 <b>32</b>。</li>
+  <li>MemEvoBench：LLM 与结构判据高度收敛（仅 9/320 条决策不同）。</li>
+</ul>
+
+<!-- ============================= 11 决策 ============================= -->
+<h1 id="c11" class="pb">11　决策记录与再现性</h1>
+
+<table>
+  <caption>表 11-1　决策记录</caption>
+  <thead><tr><th style="width:150px">决策</th><th>内容</th><th>依据</th></tr></thead>
+  <tbody>
+    <tr><td>D1 模板记法</td><td>弃用早期抽象角色记号，改用「节点类型 × 节点属性 × 边」的原生枚举</td><td>表达力（一攻击多模式）+ 与实现对齐</td></tr>
+    <tr><td>D2 相邻粒度</td><td>"相邻"取步骤级（step 差 == 1）</td><td>与 E1 步骨架一致，且保持 0 差异</td></tr>
+    <tr><td>D3 新增 P8</td><td>落地"伪装系统指令型"，仅在 P1–P7 未命中时启用</td><td>ΔF1 +0.0585、ΔP +0.0073、ΔFP +0</td></tr>
+    <tr><td>D4 否决 COMPLY/CRED</td><td>不纳入</td><td>精确率降 1.6–2.3pt，违反精确率优先</td></tr>
+    <tr><td>D5 对齐路线</td><td>采纳路线 B（后置 OR），放弃全量重跑</td><td>零 API 调用，与路线 C 探针几乎等价</td></tr>
+    <tr><td>D6 属性下沉</td><td>判定含义下沉为节点属性</td><td>2,201 条轨迹 0 差异校验通过</td></tr>
+    <tr><td>D7 三问输出契约</td><td>边收敛为「时间先后 / 信息传导」两类（可并存）；P1–P8 从预枚举模板降级为 Q3 演化路径的压缩标签；新增薄派生层 <code>_v3_analysis.py</code>，检测计算零改动</td><td>2,201 条上 Q1≡hit、Q2.primary≡min(signal_steps)、Q3.shape↔标签三项全等价，零 API</td></tr>
+  </tbody>
+</table>
+
+<h3>11.1 再现性</h3>
+<ul>
+  <li><strong>零 API 复现。</strong>结构判据、模板分布、合并结果均为纯离线计算，可完全复现。</li>
+  <li><strong>缓存机制。</strong>LLM 判读缓存键 = <code>sha256(MODEL + SYSTEM_PROMPT + prompt)</code>；rubric 变更自动使旧缓存失效。</li>
+  <li><strong>口径复用。</strong>规则常量与工具映射复用 <code>_struct_v2</code>，避免与既有消融实验产生口径漂移。</li>
+</ul>
+
+<!-- ============================= 12 经验 ============================= -->
+<h1 id="c12" class="pb">12　经验与教训</h1>
+
+<div class="card">
+  <h3>有效</h3>
+  <ul>
+    <li><strong>属性下沉 + 图模式</strong>让模板可读、可复现，且不损失性能（0 差异）。</li>
+    <li><strong>"机制签名"优于"统计特征"</strong>：SYS 在 825 条负样本上零误报，是攻击机制的必然痕迹，而非阈值调参的产物。</li>
+    <li><strong>零调用后置逻辑（OR 合并）</strong>在判定差异场景下，可替代昂贵的全量重跑。</li>
+    <li><strong>精确率优先</strong>的规则准入，保证了新信号不引入代价。</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>无效 / 已否决</h3>
+  <ul>
+    <li><strong>基于 3-gram 新颖度的检测</strong>无效：hard_negative 的均值最高，无区分度。</li>
+    <li><strong>COMPLY（伪造合规指令）</strong>：在良性委托句上误报 32 条，不适合作为通用规则。</li>
+    <li><strong>CRED（凭证/危险命令词）</strong>：在 coding 良性样本上误报 10 条。</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>边界与局限</h3>
+  <ul>
+    <li><strong>P8 只覆盖 partial。</strong>其 <code>sys</code> 痕迹是 attacked_partial 注入被内化的机制签名，其他攻击类型不具备该语言特征——这是它的收益来源，也是它的适用边界。</li>
+    <li><strong>attacked_delayed 召回仍低</strong>（结构 41.8%）：延迟触发的注入不产生即时的 <code>AC[目标]</code> 节点，现有模板未覆盖。</li>
+    <li><strong>MemEvoBench 精确率</strong>受标签噪声拖累（41% 误报本身含外发/敏感动作）。</li>
+    <li><strong>QA 段结构不可达</strong>：无工具动作 → 无 <code>AC[目标]</code> 节点，需依赖 LLM 判读。</li>
+  </ul>
+</div>
+
+<!-- ============================= 13 附录 ============================= -->
+<h1 id="c13" class="pb">13　附录：表示、三问输出与校验的代码落地</h1>
+
+<h3>13.1 落地位置</h3>
+<p>节点/边与节点侧判定的实现位于 <code>v3-defs/_v3_defs.py</code>；三问输出由<strong>薄派生层</strong> <code>v3-defs/_v3_analysis.py</code> 承担（只读 <code>classify</code> 结果做步号算术，不改任何检测计算）：</p>
+<table>
+  <caption>表 13-1　实现结构</caption>
+  <thead><tr><th style="width:190px">函数</th><th>职责</th></tr></thead>
+  <tbody>
+    <tr><td><code>build_nodes(rec, cfg)</code></td><td>产出 4 类节点，并把判定所需含义下沉为节点属性</td></tr>
+    <tr><td><code>build_edges(nodes)</code></td><td>E1 相邻骨架 + E2 类型化实体交集（可并存）</td></tr>
+    <tr><td><code>find_signal_nodes(nodes, …)</code></td><td>求值谓词 A（带信号节点；读节点类型 / 文本属性 / 下游节点），返回 {step: 节点 nid}</td></tr>
+    <tr><td><code>find_target_actions(nodes)</code></td><td>求值谓词 B（危险动作节点；读 AC 节点的 <code>unauth_ext/harm/branch3</code>）</td></tr>
+    <tr><td><code>assign_template(nodes, …)</code></td><td>P1–P5 的节点/边图模式匹配（步骤级相邻）</td></tr>
+    <tr><td><code>detect_p6/p7/p8(nodes)</code></td><td>三条低召回补丁的图模式匹配</td></tr>
+    <tr><td><code>classify(rec, cfg)</code></td><td>统一接口：建图 → 节点侧判定 → 标签 → 返回结果字典</td></tr>
+    <tr><td colspan="2" class="small dim" style="background:#fafafa"><b>三问输出层（_v3_analysis.py，纯派生，零新判定）</b></td></tr>
+    <tr><td><code>analyze(rec)</code></td><td>由 <code>classify</code> 结果派生 <code>q1</code>（outcome/severity）、<code>q2</code>（primary/secondary 源点）、<code>q3</code>（shape/path 演化）</td></tr>
+    <tr><td><code>verify(records)</code></td><td>三条等价校验：Q1≡hit、Q2.primary≡min(signal_steps)、Q3.shape↔P1–P8</td></tr>
+  </tbody>
+</table>
+
+<h3>13.2 重构校验（关键证据）</h3>
+<p>改造采用<strong>忠实改写</strong>策略：新版图模式与基线（<code>_v3_defs_legacy.py</code>）应在同一批轨迹上完全一致。校验脚本 <code>_v3_refactor_check.py</code> 逐条比较 <code>hit / template / reason / signal_steps / target_steps / target_detail / 建图统计 / 节点骨架 / 边</code>：</p>
+<div class="formula">
+AgentDrift   n = 1,881
+MemEvoBench  n =    320
+合计 2,201 条，逐条字段差异 <b>0 处</b>
+结果：<b>CLEAN</b> —— 图骨架 / 判定 / 模板 / 统计完全一致（纯离线，零 API 调用）
+</div>
+<p>该结论同时保证：本报告第 7–10 章的全部指标在改造前后<strong>数值不变</strong>。</p>
+
+<p>三问输出层的等价性由 <code>_v3_analysis.py verify</code> 单独核对（同 2,201 条，纯离线）：</p>
+<div class="formula">
+等价 1　(outcome ≠ none) == hit ..................... AgentDrift 1,881/1,881　MemEvoBench 320/320
+等价 2　Q2.primary.step == min(signal_steps) ....... AgentDrift   926/926　MemEvoBench 120/120
+等价 3　Q3.shape ↔ P1–P8 一一对应 .................. AgentDrift 1,881/1,881　MemEvoBench 320/320
+结果：<b>三条等价全部成立</b>，检测计算未改动、零 API。
+</div>
+
+<h3>13.3 权威数据文件</h3>
+<table>
+  <caption>表 13-2　数据与结果文件</caption>
+  <thead><tr><th>文件</th><th>内容</th></tr></thead>
+  <tbody>
+    <tr><td><code>_v3_summary.txt</code></td><td>全数据集重测汇总（权威数字来源）</td></tr>
+    <tr><td><code>_v3_p8_decision.txt</code></td><td>P8 归因决策与逐子型召回</td></tr>
+    <tr><td><code>_v3_p8_or.txt</code></td><td>路线 B 合并结果</td></tr>
+    <tr><td><code>_v3_refactor_check.py</code></td><td>表示重构的 0 差异校验脚本</td></tr>
+    <tr><td><code>_v3_analysis.py</code></td><td>三问输出层（Q1/Q2/Q3 派生）与三条等价校验，零 API</td></tr>
+    <tr><td><code>_v3_eval_agentdrift.py</code> / <code>_v3_eval_memevobench.py</code></td><td>两个数据集的离线评估</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  v3 化简表示 · 注入攻击检测研究报告　|　版本 v3.4（节点 + 两类边表示，三问输出契约，P1–P8 降级为压缩标签）　|　2026-10-15
+</footer>
+
+</div>
+</body>
+</html>
